@@ -1,5 +1,5 @@
 import { Injectable, InternalServerErrorException, NotFoundException, UnauthorizedException } from '@nestjs/common';
-import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { MediaStatus } from '@prisma/client';
 import { PrismaService } from '../../common/database/prisma.service.js';
 import { ListMediaQueryDto } from './dto/list-media-query.dto.js';
@@ -19,7 +19,6 @@ const playbackLifetimeMs = 5 * 60 * 1000;
 
 interface PlaybackTokenPayload {
   exp: number;
-  nonce: string;
   slug: string;
 }
 
@@ -57,7 +56,7 @@ export class CatalogService {
 
     if (!media || !media.assets[0]) throw new NotFoundException('Contenido no disponible para reproducir.');
 
-    const payload: PlaybackTokenPayload = { slug: media.slug, exp: Date.now() + playbackLifetimeMs, nonce: randomUUID() };
+    const payload: PlaybackTokenPayload = { slug: media.slug, exp: Date.now() + playbackLifetimeMs };
     return { token: this.signPlaybackPayload(payload), expiresAt: new Date(payload.exp).toISOString() };
   }
 
@@ -81,7 +80,8 @@ export class CatalogService {
   }
 
   private signPlaybackPayload(payload: PlaybackTokenPayload) {
-    const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
+    const compactPayload = `${payload.slug}.${payload.exp.toString(36)}.${randomBytes(6).toString('base64url')}`;
+    const encodedPayload = Buffer.from(compactPayload).toString('base64url');
     return `${encodedPayload}.${this.createSignature(encodedPayload)}`;
   }
 
@@ -103,7 +103,11 @@ export class CatalogService {
 
   private decodePlaybackPayload(encodedPayload: string) {
     try {
-      return JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8')) as PlaybackTokenPayload;
+      const [slug, expiration, nonce, ...rest] = Buffer.from(encodedPayload, 'base64url').toString('utf8').split('.');
+      if (!slug || !expiration || !nonce || rest.length) throw new Error('Invalid playback payload');
+      const exp = Number.parseInt(expiration, 36);
+      if (!Number.isFinite(exp)) throw new Error('Invalid playback payload');
+      return { slug, exp };
     } catch {
       throw new UnauthorizedException('Token de reproducción no válido.');
     }
