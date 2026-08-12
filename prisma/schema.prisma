@@ -1,0 +1,81 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum MediaType {
+  MOVIE
+  SERIES
+  LIVE
+}
+
+enum MediaStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model User {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  profiles  Profile[]
+}
+
+model Profile {
+  id        String          @id @default(cuid())
+  name      String
+  avatarUrl String?
+  userId    String
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  progress  WatchProgress[]
+  createdAt DateTime        @default(now())
+}
+
+model Media {
+  id          String          @id @default(cuid())
+  slug        String          @unique
+  title       String
+  synopsis    String?
+  type        MediaType
+  status      MediaStatus     @default(DRAFT)
+  posterUrl   String?
+  backdropUrl String?
+  durationSec Int?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  assets      MediaAsset[]
+  progress    WatchProgress[]
+
+  @@index([status, type])
+}
+
+model MediaAsset {
+  id        String   @id @default(cuid())
+  mediaId   String
+  media     Media    @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  url       String
+  mimeType  String
+  language  String?
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model WatchProgress {
+  id          String   @id @default(cuid())
+  profileId   String
+  mediaId     String
+  positionSec Int      @default(0)
+  completed   Boolean  @default(false)
+  updatedAt   DateTime @updatedAt
+  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  media       Media    @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, mediaId])
+}
